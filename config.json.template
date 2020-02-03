@@ -1,0 +1,54 @@
+{
+	"KafkaBrokers": ["kafka-boostrap1:9092", "boostrap2:9092"],
+	"Web": {
+		"Addr": ":8091",
+		"ReadTimeout": 5000000000,
+		"WriteTimeout": 10000000000,
+		"IdleTimeout": 60000000000
+	},
+	"WebTLS": {
+		"CertFile": "",
+		"KeyFile": "",
+		"CaFile": ""
+	},
+	"Kafka": {
+		"Net": {
+			"MaxOpenRequests": 5,
+			"KeepAlive": 0
+		},
+		"Producer": {
+			"RequiredAcks": 1,
+			"Compression": 0,
+			"Idempotent": false,
+			"Return": {
+				"Successes": false,
+				"Errors": true
+			},
+			"Flush": {
+				"Frequency": 10000000
+			},
+			"Retry": {
+				"Max": 10
+			}
+		},
+		"ClientID": "hc",
+		"ChannelBufferSize": 4096
+	},
+	"KafkaVersion": "2.1.0",
+	"KafkaTLS": {
+		"CertFile": "",
+		"KeyFile": "",
+		"CaFile": "",
+		"Insecure": false
+	},
+    "Redis": {
+        "ClientConfig": {
+            "Addrs": ["192.168.0.1", "192.168.0.2"],
+            "Password": "only if there Redis has password",
+            "MasterName": "name of master used by Sentinel"
+        },
+        "Keyspace": "quota"
+        "TTL": 86400
+    },
+    "Limit": 20
+}
