@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-redis/redis"
-
 	"github.com/Shopify/sarama"
+	"github.com/go-redis/redis/v7"
 )
 
 type configuration struct {
@@ -98,6 +97,7 @@ func getConfig(logger *log.Logger) (*configuration, error) {
 	logger.Println("Kafka brokers:", strings.Join(config.KafkaBrokers, ", "))
 	logger.Println("WebTLS Config:", config.WebTLS)
 	logger.Println("KafkaTLS Config:", config.KafkaTLS)
+	logger.Println("Redis Config:", config.Redis)
 
 	return &config, nil
 }

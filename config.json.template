@@ -47,7 +47,7 @@
             "Password": "only if there Redis has password",
             "MasterName": "name of master used by Sentinel"
         },
-        "Keyspace": "quota"
+        "Keyspace": "quota",
         "TTL": 86400
     },
     "Limit": 20

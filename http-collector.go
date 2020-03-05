@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/go-redis/redis"
+	"github.com/go-redis/redis/v7"
 	metrics "github.com/rcrowley/go-metrics"
 )
 
@@ -213,10 +213,10 @@ func (s *Server) handleMsgLimit(pathPrefix string) http.Handler {
 
 func (s *Server) overLimit(key string) bool {
 	day := strconv.FormatInt(time.Now().Unix()/3600/24, 10)
+	redisKey := s.config.Redis.Keyspace + ":" + day + ":" + key
 	pipe := s.redis.Pipeline()
-	count := pipe.Incr(s.config.Redis.Keyspace + ":" + day + ":" + key)
-	pipe.Expire(key, s.config.Redis.ttl)
-
+	count := pipe.Incr(redisKey)
+	pipe.Expire(redisKey, s.config.Redis.ttl)
 	_, err := pipe.Exec()
 	if err != nil {
 		s.Println("Error: ", err)
