@@ -21,6 +21,13 @@ import (
 	metrics "github.com/rcrowley/go-metrics"
 )
 
+var (
+	// AppName overide the following through ldflags="-X <package>.<varName>=<value>"
+	AppName    = "hc"
+	AppVersion = "unknown"
+	BuildTime  = "unkown"
+)
+
 const (
 	apiPathV2      string = "/v2/nolim/"
 	apiPathV2Limit string = "/v2/limit/"
