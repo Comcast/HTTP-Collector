@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -43,13 +44,20 @@ type TlsConfig struct {
 
 func getConfig(logger *log.Logger) (*configuration, error) {
 	var (
+		version    bool
 		addr       = flag.String("addr", os.Getenv("HC_ADDR"), "The address to bind to, ex: :8080, env: HC_ADDR")
 		brokers    = flag.String("brokers", os.Getenv("KAFKA_BROKERS"), "The Kafka brokers to connect to, as a comma separated list, env: KAFKA_BROKERS")
 		configFile = flag.String("config", os.Getenv("HC_CONFIG"), "The config filename, env: HC_CONFIG")
 		verbose    = flag.Bool("verbose", false, "Turn on verbose logging")
 	)
-
+	flag.BoolVar(&version, "v", false, "Shows version and exit")
+	flag.BoolVar(&version, "version", false, "Shows version and exit")
 	flag.Parse()
+
+	if version {
+		fmt.Println(AppName, AppVersion, BuildTime)
+		os.Exit(0)
+	}
 
 	config := configuration{
 		Web:   &http.Server{},
