@@ -18,7 +18,8 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/go-redis/redis/v7"
-	metrics "github.com/rcrowley/go-metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/rcrowley/go-metrics"
 )
 
 var (
@@ -41,7 +42,7 @@ type Server struct {
 	kafka  sarama.AsyncProducer
 	redis  redis.UniversalClient
 	*log.Logger
-	metric *appMetric
+	metrics *appMetrics
 }
 
 type appMetric struct {
@@ -62,10 +63,10 @@ func main() {
 	}
 
 	server := &Server{
-		config: config,
-		router: http.NewServeMux(),
-		Logger: logger,
-		metric: newMetrics(),
+		config:  config,
+		router:  http.NewServeMux(),
+		Logger:  logger,
+		metrics: newMetrics(),
 	}
 	server.newWebServer()
 
@@ -117,11 +118,13 @@ func main() {
 }
 
 func (s *Server) newWebServer() {
+	var t http.Handler
+	t = webMetrics(s.metrics, s.router)
+
 	if s.config.Verbose {
-		s.config.Web.Handler = logging(s.Logger)(s.router)
-	} else {
-		s.config.Web.Handler = s.router
+		t = webLogging(s.Logger, t)
 	}
+	s.config.Web.Handler = t
 	s.config.Web.ErrorLog = s.Logger
 	s.Println("Web Config:", s.config.Web)
 	s.web = s.config.Web
@@ -136,7 +139,8 @@ func (s *Server) addRoutes() *http.ServeMux {
 	s.router.Handle(apiPathV2Limit, s.handleMsgLimit(apiPathV2Limit))
 	s.router.Handle("/", s.handleDefault())
 	s.router.Handle("/metrics", s.handleMetrics())
-	s.router.Handle("/monitor", s.handleMetrics())
+	s.router.Handle("/healthz", s.handleHealthz())
+	s.router.Handle("/version", s.handleVersion())
 	return s.router
 }
 
@@ -149,21 +153,38 @@ func (s *Server) handleDefault() http.Handler {
 
 func (s *Server) handleMetrics() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		metrics.WriteJSONOnce(s.metric.registry, w)
+		s.metrics.promClient.UpdatePrometheusMetricsOnce()
+		promhttp.Handler().ServeHTTP(w, r)
 	})
 }
 
+func (s *Server) handleHealthz() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, http.StatusText(http.StatusOK))
+	})
+}
+
+func (s *Server) handleVersion() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintf(w, "%v, %v, %v", AppName, AppVersion, BuildTime)
+	})
+}
 func (s *Server) handleMsg(pathPrefix string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodPost, http.MethodPut:
-			s.metric.rptRate.Mark(1)
 			key := getKey(r)
 			topic := strings.TrimPrefix(r.URL.Path, pathPrefix)
 			body, err := ioutil.ReadAll(r.Body)
-			if err != nil || len(body) > s.config.Kafka.Producer.MaxMessageBytes {
-				s.Printf("Error reading body or size too large: %v", err)
+			if err != nil {
+				s.Printf("Error reading body: %v", err)
 				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+				return
+			} else if l := len(body); l > s.config.Kafka.Producer.MaxMessageBytes {
+				s.Printf("Body size too large: %d", l)
+				http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
 				return
 			}
 			s.kafka.Input() <- createMessage(topic, key, body)
@@ -203,9 +224,13 @@ func (s *Server) handleMsgLimit(pathPrefix string) http.Handler {
 			} else {
 				topic := strings.TrimPrefix(r.URL.Path, pathPrefix)
 				body, err := ioutil.ReadAll(r.Body)
-				if err != nil || len(body) > s.config.Kafka.Producer.MaxMessageBytes {
-					s.Printf("Error reading body or size too large: %v", err)
+				if err != nil {
+					s.Printf("Error reading body: %v", err)
 					http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+					return
+				} else if l := len(body); l > s.config.Kafka.Producer.MaxMessageBytes {
+					s.Printf("Body size too large: %d", l)
+					http.Error(w, http.StatusText(http.StatusRequestEntityTooLarge), http.StatusRequestEntityTooLarge)
 					return
 				}
 				s.kafka.Input() <- createMessage(topic, key, body)
@@ -229,10 +254,7 @@ func (s *Server) overLimit(key string) bool {
 		s.Println("Error: ", err)
 		return false
 	}
-	if count.Val() > s.config.Limit {
-		return true
-	}
-	return false
+	return count.Val() > s.config.Limit
 }
 
 func createMessage(topic, key string, body []byte) *sarama.ProducerMessage {
@@ -254,7 +276,7 @@ func (s *Server) newKafkaProducer() sarama.AsyncProducer {
 		sarama.Logger = log.New(os.Stdout, "[sarama] ", log.LstdFlags)
 	}
 
-	s.config.Kafka.MetricRegistry = metrics.NewPrefixedChildRegistry(s.metric.registry, "sarama.")
+	s.config.Kafka.MetricRegistry = metrics.NewPrefixedChildRegistry(s.metrics.saramaRegistry, "sarama.")
 
 	v, err := sarama.ParseKafkaVersion(s.config.KafkaVersion)
 	var versionIsValid bool
@@ -287,7 +309,7 @@ func (s *Server) newKafkaProducer() sarama.AsyncProducer {
 
 	go func() {
 		for err := range producer.Errors() {
-			s.metric.pFail.Mark(1)
+			s.metrics.pFail.Inc()
 			s.Println("Failed to write to Kafka:", err)
 		}
 	}()
@@ -295,32 +317,20 @@ func (s *Server) newKafkaProducer() sarama.AsyncProducer {
 	if s.config.Kafka.Producer.Return.Successes {
 		go func() {
 			for range producer.Successes() {
-				s.metric.pSuc.Mark(1)
+				s.metrics.pSuc.Inc()
 			}
 		}()
 	}
 	return producer
 }
 
-func logging(logger *log.Logger) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				logger.Println(r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
-			}()
-			next.ServeHTTP(w, r)
-		})
-	}
-}
-
-func newMetrics() *appMetric {
-	registry := metrics.NewRegistry()
-	return &appMetric{
-		registry: registry,
-		pSuc:     metrics.GetOrRegisterMeter("produce-success", registry),
-		pFail:    metrics.GetOrRegisterMeter("produce-failure", registry),
-		rptRate:  metrics.GetOrRegisterMeter("report-rate", registry),
-	}
+func webLogging(logger *log.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			logger.Println(r.Method, r.URL.Path, r.RemoteAddr, r.UserAgent())
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func createTLSConfiguration(c TlsConfig, logger *log.Logger) (t *tls.Config) {
