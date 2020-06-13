@@ -45,13 +45,6 @@ type Server struct {
 	metrics *appMetrics
 }
 
-type appMetric struct {
-	registry metrics.Registry
-	pSuc     metrics.Meter
-	pFail    metrics.Meter
-	rptRate  metrics.Meter
-}
-
 func main() {
 	logger := log.New(os.Stdout, "[hc] ", log.LstdFlags)
 
