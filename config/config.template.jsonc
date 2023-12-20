@@ -1,0 +1,117 @@
+{
+	"Kafka": {
+		"Brokers": ["kafka-boostrap1:9092", "boostrap2:9092"], // can also use env KAFKA_BROKERS
+		"Sarama": { // https://pkg.go.dev/github.com/IBM/sarama#Config
+			"Net": {
+				"MaxOpenRequests": 5,
+				"KeepAlive": 0
+			},
+			"Producer": {
+				"RequiredAcks": 1,
+				"Compression": "lz4",	// none, gzip, snappy, lz4, zstd
+				"Idempotent": false,
+				"Return": {
+					"Successes": true,
+					"Errors": true
+				},
+				"Flush": {
+					"Bytes": 524280,
+					"Messages": 10000,
+					"Frequency": 10000000 // unit in ns
+				},
+				"Retry": {
+					"Max": 10
+				}
+			},
+			"ClientID": "hc",
+			"ChannelBufferSize": 4096
+		},
+		"TLS": {
+			"CertFile": "",
+			"KeyFile": "",
+			"CaFile": "",
+			"Insecure": false
+		},
+		"Version": "2.1.0"	
+	},
+	"Web": {
+		"Server": { // https://golang.org/pkg/net/http/#Server
+			"Addr": ":8091",
+			"ReadTimeout": 5000000000,
+			"WriteTimeout": 10000000000,
+			"IdleTimeout": 60000000000
+		},
+		"TLS": {
+			"CertFile": "",
+			"KeyFile": "",
+			"CaFile": ""
+		},
+		"MaxBodySize": 524288 // default 524288, use 0 for unlimited
+	},
+	"MQTT": {
+		"Enable": false, // Enable MQTT listenr or not, default false
+		"Role": "single", // single, leader, minion. default single
+		// LogLevel DEBUG, INFO, WARN and ERROR
+		// defaults: "server": "error", "mochi": "error", "paho": "error"
+		// "LogLevel": {"server": "error", "mochi": "error", "paho": "error"},
+		"Federation": {
+			"ID": "hc-<uniqueNum>", // Client ID prefix used for minion connection to leader. Must be unique for ecah minion instance.
+			"Threads": 2, // Number of threads/connections from minion to leader, default 2
+			"QoS": 1,
+			"ChannelSize": 1024,
+			"Bridges": [
+				{ "Addr": "leaderAddr1:port" }, // Leader URL
+				{ "Addr": "leaderAddr2" }
+			],
+			"TLS": {
+				"CertFile": "",
+				"KeyFile": "",
+				"CaFile": ""
+			},
+			"SysTopic": "SysTopic",
+			"DeviceTopicPrefix": "device"
+		},
+		"Broker": {
+			// "Capabilities": { // https://pkg.go.dev/github.com/mochi-co/mqtt/v2#Options
+			// 	"MaximumPacketSize": 524288,
+			//  "MaximumClientWritesPending": 128 // default 128
+			// },
+			// "ClientNetWriteBufferSize": 2048, // Default: 2048
+			// "ClientNetReadBufferSize": 2048, // Default: 2048
+			"Listeners": [
+				{ "Port": ":1883",
+				  "TLS": {
+					"CertFile": "",
+					"KeyFile": "",
+					"CaFile": ""
+				  }
+				}
+			],
+			"MqttToKafka": [ // Mqtt to Kafka topic name mappings
+			{ "Name": "something", // only used for metrics and rpt header
+			  "MqttTopic": "a/b/{x}/{y}",
+			  // "Decompress": false, // default false
+			  // "DisableBase64": false, // default: false
+			  "KafkaTopics": [
+				{ "Name": "t1", "Key": "{x}", "DisableHeader": true},
+				{ "Name": "t2-{y}", "Key": "{x}", "DisableHeader": true}
+			] }
+		]
+		},
+	},
+	"Redis": {
+		"ClientConfig": {
+			"Addrs": ["192.168.0.1", "192.168.0.2"], // if Addrs is blank, it will disable limit API
+			"Password": "only if Redis has password", // use env variable REDIS_PASSWORD instead
+			"MasterName": "only if Redis using Sentinel mode"
+		},
+		"Keyspace": "quota",
+		"TTL": 86400
+	},
+	"Tracing": {
+		// This identifies the microservice for W3C Tracing standard
+		// Please modify as required
+		"AppID": "0000000000000001"
+	},
+	"Limit": 20,
+}
